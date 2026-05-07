@@ -18,6 +18,7 @@ env/
 # ===== 上传的文档与持久化数据 =====
 backend/app/storage/uploaded_files/*
 !backend/app/storage/uploaded_files/.gitkeep
+backend/app/storage/generated_files/
 backend/app/storage/metadata.json
 qdrant_storage/
 

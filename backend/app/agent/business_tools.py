@@ -395,34 +395,31 @@ def generate_checklist_docx(
 ) -> Dict[str, Any]:
     """使用 python-docx 生成 Word 材料清单文件。
 
-    【文件命名策略】
-    使用英文 + 时间戳命名（如 checklist_20260507_153012.docx），原因：
+    文件命名策略：
+    - 英文 + 时间戳命名（如 checklist_20260507_153012.docx）
     - 中文文件名在 Windows URL 编码时可能出问题
     - 时间戳保证文件名不冲突，支持多次生成
 
-    【存储路径】
-    backend/app/storage/generated_files/
-    与 uploaded_files/ 分开，便于区分"用户上传的"和"系统生成的"。
+    存储路径：backend/app/storage/generated_files/
 
-    【Word 文档结构】
-    1. 标题（居中、18pt 加粗）
-    2. 一、所需材料（编号列表）
-    3. 二、办理步骤（编号列表）
-    4. 三、注意事项（如有）
+    Word 文档结构：
+    1. 标题（居中、小二 18pt 加粗 微软雅黑）
+    2. 一、所需材料（四号 14pt 黑体标题 + 小四 12pt 宋体编号列表）
+    3. 二、办理步骤（同上）
+    4. 三、注意事项（同上，如有）
     5. 生成时间水印（灰色小字）
 
     返回 dict 包含 filename、file_path、download_url。
     """
 
-    # ---- 延迟导入：python-docx 只在需要生成 Word 时才加载 ----
-    # 这样做的好处：如果只是做资格判断（不需要生成 Word），就不会加载 docx 库
     from docx import Document
-    from docx.shared import Pt, RGBColor
+    from docx.shared import Pt, RGBColor, Cm
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
 
     notes = notes or []
 
-    # ---- 确保目录存在（幂等操作） ----
+    # ---- 确保目录存在 ----
     generated_dir = settings.storage_dir / "generated_files"
     generated_dir.mkdir(parents=True, exist_ok=True)
 
@@ -434,45 +431,89 @@ def generate_checklist_docx(
     # ---- 构建 Word 文档 ----
     doc = Document()
 
-    # 标题：居中、大号、加粗
+    # ==================================================================
+    # 第 1 步：统一文档默认样式（解决中文乱码和格式不一致的根本原因）
+    # ==================================================================
+    # python-docx 默认字体是 Calibri，不包含中文字形。
+    # Word 打开时会做字体回退，但不同版本的 Word 回退策略不同，
+    # 导致有的电脑上显示正常，有的电脑上显示 tofu 方块或乱码。
+    # 解决方案：在 Normal 样式上同时设置 ASCII 和东亚字体。
+
+    _configure_style(doc.styles["Normal"], font_ascii="Microsoft YaHei", font_east="Microsoft YaHei", size=Pt(11), after=Pt(6), line_spacing=1.35)
+    _configure_style(doc.styles["Heading 2"], font_ascii="Microsoft YaHei", font_east="Microsoft YaHei", size=Pt(14), after=Pt(4), line_spacing=1.5, bold=True)
+    _configure_style(doc.styles["List Number"], font_ascii="Microsoft YaHei", font_east="Microsoft YaHei", size=Pt(11), after=Pt(3), line_spacing=1.35)
+
+    # ==================================================================
+    # 第 2 步：设置页边距
+    # ==================================================================
+    for section in doc.sections:
+        section.top_margin = Cm(2.54)
+        section.bottom_margin = Cm(2.54)
+        section.left_margin = Cm(3.18)
+        section.right_margin = Cm(3.18)
+
+    # ==================================================================
+    # 第 3 步：标题
+    # ==================================================================
     title_para = doc.add_paragraph()
     title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_run = title_para.add_run(task_name or "办事材料清单")
     title_run.font.size = Pt(18)
     title_run.font.bold = True
+    title_run.font.name = "Microsoft YaHei"
+    _set_run_east_font(title_run, "Microsoft YaHei")
+    _set_run_color(title_run, "1a1a1a")
 
     doc.add_paragraph()  # 空行分隔
 
+    # ==================================================================
+    # 第 4 步：正文内容
+    # ==================================================================
+
     # 一、所需材料
     doc.add_heading("一、所需材料", level=2)
-    for i, m in enumerate(materials, 1):
-        doc.add_paragraph(f"{i}. {m}", style="List Number")
+    if materials:
+        for i, m in enumerate(materials, 1):
+            para = doc.add_paragraph(f"{i}. {m}", style="List Number")
+            _ensure_run_fonts(para)
+    else:
+        _add_hint_para(doc, "(无)")
 
     # 二、办理步骤
     doc.add_heading("二、办理步骤", level=2)
-    for i, s in enumerate(steps, 1):
-        doc.add_paragraph(f"{i}. {s}", style="List Number")
+    if steps:
+        for i, s in enumerate(steps, 1):
+            para = doc.add_paragraph(f"{i}. {s}", style="List Number")
+            _ensure_run_fonts(para)
+    else:
+        _add_hint_para(doc, "(无)")
 
     # 三、注意事项（可选）
     if notes:
         doc.add_heading("三、注意事项", level=2)
         for n in notes:
-            doc.add_paragraph(f"- {n}")
+            para = doc.add_paragraph(f"● {n}")
+            _ensure_run_fonts(para)
 
-    # 底部水印：生成时间
+    # ==================================================================
+    # 第 5 步：底部水印
+    # ==================================================================
     doc.add_paragraph()
-    generated_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    generated_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
     footer_para = doc.add_paragraph(
         f"（本文档由系统自动生成，生成时间：{generated_time}）"
     )
-    footer_para.runs[0].font.size = Pt(9)
-    footer_para.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+    footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if footer_para.runs:
+        footer_para.runs[0].font.size = Pt(9)
+        footer_para.runs[0].font.color.rgb = RGBColor(153, 153, 153)
+        footer_para.runs[0].font.name = "Microsoft YaHei"
+        _set_run_east_font(footer_para.runs[0], "Microsoft YaHei")
 
     doc.save(str(file_path))
     logger.info(f"[business_tools] checklist docx saved: {file_path}")
 
     # ---- 构建下载 URL ----
-    # /api/files/download/{filename} 由 backend/app/api/files.py 提供
     download_url = f"/api/files/download/{filename}"
 
     return {
@@ -480,3 +521,87 @@ def generate_checklist_docx(
         "file_path": str(file_path),
         "download_url": download_url,
     }
+
+
+# =====================================================================
+# Word 文档辅助函数
+# =====================================================================
+
+
+def _configure_style(
+    style,
+    font_ascii: str,
+    font_east: str,
+    size,
+    after,
+    line_spacing: float,
+    bold: bool = False,
+) -> None:
+    """同时设置样式的西文和东亚字体，确保中英文混排都清晰。"""
+    from docx.oxml.ns import qn
+
+    style.font.name = font_ascii
+    style.font.size = size
+    style.font.bold = bold
+    style.paragraph_format.space_after = after
+    style.paragraph_format.line_spacing = line_spacing
+
+    # 通过 XML 设置东亚字体（python-docx 的 font.name 只覆盖西文字体）
+    _ensure_xml_rFonts(style.element, font_ascii, font_east)
+
+
+def _set_run_east_font(run, font_name: str) -> None:
+    """为单个 run 设置东亚字体名（用于 title 等不受 style 控制的 run）。"""
+    from docx.oxml.ns import qn
+
+    _ensure_xml_rFonts(run._r, font_name, font_name)
+
+
+def _ensure_xml_rFonts(element, font_ascii: str, font_east: str) -> None:
+    """在任意 XML 元素下创建/更新 w:rPr/w:rFonts，设置字体。
+
+    使用 lxml 原语直接操作 XML，避免 python-docx 不同版本 API 差异。
+    """
+    from docx.oxml.ns import qn
+
+    rPr = element.find(qn("w:rPr"))
+    if rPr is None:
+        rPr = element.makeelement(qn("w:rPr"), {})
+        element.insert(0, rPr)
+
+    rFonts = rPr.find(qn("w:rFonts"))
+    if rFonts is None:
+        rFonts = rPr.makeelement(qn("w:rFonts"), {})
+        rPr.insert(0, rFonts)
+
+    rFonts.set(qn("w:eastAsia"), font_east)
+    rFonts.set(qn("w:ascii"), font_ascii)
+    rFonts.set(qn("w:hAnsi"), font_ascii)
+    rFonts.set(qn("w:cs"), font_ascii)
+
+
+def _set_run_color(run, hex_color: str) -> None:
+    """为 run 设置 RBG 颜色，hex 如 \"1a1a1a\"。"""
+    from docx.shared import RGBColor
+
+    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+    run.font.color.rgb = RGBColor(r, g, b)
+
+
+def _ensure_run_fonts(para) -> None:
+    """确保段落内所有 run 都使用微软雅黑（兜底：即使 style 没生效也不会乱码）。"""
+    for run in para.runs:
+        if run.font.name is None:
+            run.font.name = "Microsoft YaHei"
+        _set_run_east_font(run, "Microsoft YaHei")
+
+
+def _add_hint_para(doc, text: str) -> None:
+    """添加灰色提示段落（用于「无」等占位信息）。"""
+    from docx.shared import Pt, RGBColor
+
+    para = doc.add_paragraph(text)
+    _ensure_run_fonts(para)
+    for run in para.runs:
+        run.font.size = Pt(10)
+        run.font.color.rgb = RGBColor(153, 153, 153)
