@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.10.1
+    container_name: school-policy-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  # 可选：后端服务（默认本地直接 uvicorn 运行，更便于调试）
+  # 如果要在 Docker 中运行，去掉下面的 profiles 注释，并执行 docker compose --profile full up -d
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: school-policy-backend
+    depends_on:
+      - qdrant
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app/storage:/app/app/storage
+    profiles:
+      - full
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: school-policy-frontend
+    depends_on:
+      - backend
+    environment:
+      - BACKEND_URL=http://backend:8000
+    ports:
+      - "8501:8501"
+    profiles:
+      - full
+    restart: unless-stopped

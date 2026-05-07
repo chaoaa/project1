@@ -1,0 +1,37 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ===== Virtualenv =====
+.venv/
+venv/
+env/
+
+# ===== 环境配置（不要把真实 key 提交到 git） =====
+.env
+
+# ===== 上传的文档与持久化数据 =====
+backend/app/storage/uploaded_files/*
+!backend/app/storage/uploaded_files/.gitkeep
+backend/app/storage/metadata.json
+qdrant_storage/
+
+# ===== Embedding 模型缓存 =====
+.cache/
+.huggingface/
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ===== 日志 =====
+*.log
+logs/
