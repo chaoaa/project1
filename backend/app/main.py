@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.api import chat as chat_api
 from app.api import documents as documents_api
+from app.api import files as files_api
 from app.api import health as health_api
 from app.config import settings
 from app.services.retriever import rebuild_bm25_from_qdrant
@@ -86,6 +87,7 @@ app.add_middleware(
 app.include_router(health_api.router)
 app.include_router(documents_api.router)
 app.include_router(chat_api.router)
+app.include_router(files_api.router)
 
 
 @app.get("/", tags=["meta"])

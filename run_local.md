@@ -226,8 +226,117 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 - 后端：终端按 `Ctrl + C`
 - Qdrant：`docker compose down`
 
+## 12. 新功能测试（v2 增强版 Agent）
+
+### 12.1 规则化奖学金资格判断测试
+
+此功能将资格判断从"纯 LLM 猜测"改为"确定性规则判断"，LLM 只负责解释和表达。
+
+**测试问题：**
+
+```
+我是研二学生，上一学年成绩排名前20%，但有一门课程不及格，能申请研究生学业奖学金吗？
+```
+
+**预期结果：**
+- Agent 意图识别为 `eligibility_check`
+- 调用工具：`rule_based_scholarship_checker`
+- 结论：**不符合**（not_eligible）
+- 原因：有 1 门课程不及格
+- 输出包含：【资格判断结论】【识别到的用户信息】【判断原因】【政策依据】【注意】
+
+**更多测试用例：**
+
+| 问题 | 预期结论 |
+|------|----------|
+| 我是研二，排名前15%，无挂科无处分，能申请吗？ | eligible（一等） |
+| 我是研二，排名前35%，没有挂科，能申请吗？ | eligible（二等） |
+| 我是研二，排名前60%，没有挂科，能申请吗？ | not_eligible |
+| 我是研二，排名未知，没有挂科，能申请吗？ | need_more_info |
+| 我是研二，排名前20%，但有处分，能申请吗？ | not_eligible |
+| 我是研二，有学术不端记录，能申请吗？ | not_eligible |
+
+也可以通过"Agent 高级参数 → 用户档案"传入 JSON：
+
+```json
+{"年级":"研二","成绩排名":"前20%","挂科情况":"有1门不及格"}
+```
+
+### 12.2 材料清单 Word 导出测试
+
+此功能在生成材料清单的同时，自动生成 Word 文件并提供下载链接。
+
+**测试问题：**
+
+```
+帮我生成研究生毕业申请材料清单和办理步骤。
+```
+
+**预期结果：**
+- Agent 意图识别为 `checklist_generation`
+- 调用工具：`generate_checklist`
+- 回答底部显示："已生成 Word 材料清单，可在前端下载。"
+- Tool Result 展开后包含 `generated_file` 字段（filename + download_url）
+- 前端显示下载链接，点击可下载 `.docx` 文件
+- Word 文件保存在 `backend/app/storage/generated_files/` 目录
+
+**验证 Word 文件：**
+
+1. 浏览器打开 http://localhost:8000/api/files/download/checklist_xxx.docx
+2. 文件应包含：标题、所需材料、办理步骤、注意事项、生成时间
+
+### 12.3 网页政策采集测试
+
+此功能让 Agent 通过 URL 抓取政策网页正文，清洗后入库。
+
+**测试问题：**
+
+```
+帮我把这个网页加入知识库：https://example.com/test-policy.html
+```
+
+（建议使用真实的政策网页 URL 测试，例如学校官网的通知页面）
+
+**预期结果：**
+- Agent 意图识别为 `web_ingestion`
+- 调用工具：`ingest_policy_from_url`
+- 返回：已成功采集并入库网页政策（标题、文件名、chunk 数量、来源 URL）
+- 左侧"已入库文档"中新增一条记录
+
+**也可直接调用 API：**
+
+```bash
+curl -X POST http://localhost:8000/api/documents/ingest-url \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.edu.cn/notice/xxx.html"}'
+```
+
+返回示例：
+
+```json
+{
+  "document_id": "doc_xxx",
+  "filename": "url_xxx.txt",
+  "title": "关于...的通知",
+  "source_url": "https://...",
+  "chunk_count": 8,
+  "status": "indexed",
+  "message": "文档已成功入库"
+}
+```
+
+### 12.4 新增 API 一览
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | /api/documents/ingest-url | URL 政策网页采集入库 |
+| GET  | /api/files/download/{filename} | 下载生成的 Word 材料清单 |
+
+---
+
 数据持久化目录：
 
 - 上传文件：`backend/app/storage/uploaded_files/`
+- 生成文件：`backend/app/storage/generated_files/`
 - 元数据：`backend/app/storage/metadata.json`
 - 向量数据：`qdrant_storage/`（Docker 数据卷，可删除以重置）

@@ -121,11 +121,12 @@ ChatMode = Literal[
     "retrieve",
 ]  # 当前实现里主要是为了前后端对齐字段；路由真正逻辑在各自的 endpoint
 IntentType = Literal[
-    "policy_qa",
-    "eligibility_check",
-    "checklist_generation",
-    "version_compare",
-    "unknown",
+    "policy_qa",              # 普通政策问答
+    "eligibility_check",      # 用户资格判断
+    "checklist_generation",   # 材料清单生成
+    "version_compare",        # 新旧版本对比
+    "web_ingestion",          # v2 新增：网页政策采集入库
+    "unknown",                # 无法识别（降级为 policy_qa）
 ]
 
 
@@ -173,6 +174,30 @@ class RetrieveResponse(BaseModel):
     query: str
     total: int
     chunks: List[RetrievedChunk]
+
+
+class UrlIngestRequest(BaseModel):
+    """`POST /api/documents/ingest-url` 请求体。
+
+    url 必须是完整的 http/https 链接，后端会做协议校验。
+    """
+
+    url: str = Field(..., description="要采集的政策网页 URL")
+
+
+class UrlIngestResponse(BaseModel):
+    """`POST /api/documents/ingest-url` 响应体。
+
+    和 UploadResponse 的区别：多了 title（网页标题）和 source_url（来源链接）。
+    """
+
+    document_id: str
+    filename: str
+    title: Optional[str] = None       # 从 <title> 或 <h1> 提取的网页标题
+    source_url: Optional[str] = None  # 原始 URL，方便追溯来源
+    chunk_count: int
+    status: str
+    message: str = "ok"
 
 
 class HealthResponse(BaseModel):

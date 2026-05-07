@@ -89,13 +89,52 @@ def render_citations(citations: List[Dict[str, Any]]) -> None:
             st.write(c.get("text", ""))
 
 
-def render_tool_result(intent: Optional[str], tool_name: Optional[str], tool_result: Optional[Dict[str, Any]]) -> None:
+def render_tool_result(
+    intent: Optional[str],
+    tool_name: Optional[str],
+    tool_result: Optional[Dict[str, Any]],
+    backend: str = "",
+) -> None:
+    """展示 Agent 工具调用结果。
+
+    除了原有的 JSON 折叠面板，v2 新增了：
+    1. Word 文件下载链接（当 tool_result 包含 generated_file 时）
+    2. 文件生成失败提示（当 tool_result 包含 generated_file_error 时）
+    """
+
     if not tool_result:
         return
+
     st.markdown("---")
-    st.markdown(f"**Agent 意图**：`{intent}`    **调用工具**：`{tool_name}`")
+    st.markdown(
+        f"**Agent 意图**：`{intent}`    **调用工具**：`{tool_name}`"
+    )
+
+    # ---- v2 新增：Word 材料清单下载入口 ----
+    # 用 st.markdown 的链接语法实现点击下载，不引入额外 JS 依赖。
+    # 下载链接 = 后端地址 + /api/files/download/{filename}
+    # 注意：backend 可能以 "/" 结尾，需要 rstrip 处理。
+    generated_file = tool_result.get("generated_file") if tool_result else None
+    if generated_file and generated_file.get("download_url"):
+        download_url = backend.rstrip("/") + generated_file["download_url"]
+        st.markdown(
+            f":page_facing_up: **已生成 Word 材料清单**："
+            f"[点击下载 `{generated_file['filename']}`]({download_url})"
+        )
+
+    # ---- v2 新增：文件生成失败提示 ----
+    # docx 生成失败不应阻塞整个 Agent 响应，所以这里只显示 warning
+    if tool_result and tool_result.get("generated_file_error"):
+        st.warning(
+            f"Word 文件生成失败：{tool_result['generated_file_error']}"
+        )
+
+    # ---- 原有的结构化 JSON 展示 ----
     with st.expander("Tool Result（结构化输出）", expanded=False):
-        st.code(json.dumps(tool_result, ensure_ascii=False, indent=2), language="json")
+        st.code(
+            json.dumps(tool_result, ensure_ascii=False, indent=2),
+            language="json",
+        )
 
 
 # =========================================================
@@ -199,7 +238,7 @@ mode_label = st.radio(
     horizontal=True,
 )
 mode_map = {
-    "普通 RAG 问答": ("query", "/api/chat/query"),
+    "普通 RAG 问答": ("rag", "/api/chat/query"),
     "Agent 问答（推荐）": ("agent", "/api/chat/agent"),
     "仅检索调试": ("retrieve", "/api/chat/retrieve"),
 }
@@ -313,6 +352,7 @@ if submitted:
                         resp.get("intent"),
                         resp.get("tool_name"),
                         resp.get("tool_result"),
+                        backend=backend,
                     )
 
                 # 引用

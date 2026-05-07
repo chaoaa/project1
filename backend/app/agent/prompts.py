@@ -23,11 +23,12 @@ SYSTEM_POLICY_QA = (
 
 INTENT_CLASSIFY_PROMPT = """你是高校政策问答系统的意图分类器。
 
-请把用户问题归入以下五类之一，返回严格 JSON：
+请把用户问题归入以下六类之一，返回严格 JSON：
 - policy_qa：普通政策内容问答（条件、流程、定义等）
 - eligibility_check：判断某个具体用户是否满足申请资格
 - checklist_generation：生成办事/申请的材料清单或步骤
 - version_compare：对比新旧版本政策差异
+- web_ingestion：用户要求将某个网页/链接中的政策内容加入知识库（问题中包含 http:// 或 https:// 时优先考虑此意图）
 - unknown：无法识别
 
 只输出形如：{{"intent": "policy_qa"}} 的 JSON，不要其它文字。
